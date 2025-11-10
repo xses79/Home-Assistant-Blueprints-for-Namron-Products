@@ -1,0 +1,237 @@
+blueprint:
+  name: Simplify 3-Button Controller (pulse dimming until MQTT release)
+  description: >
+    • Up/Down Press = choose your action
+    • Up/Down Hold = step dim opp/ned (absolutt brightness)
+    By Cato
+  domain: automation
+
+  input:
+    controller:
+      name: Simplify switch device
+      selector:
+        device:
+          integration: mqtt
+
+    light_1:
+      name: Light for Button 1
+      default: none
+      selector: {entity: {domain: light}}
+    light_2:
+      name: Light for Button 2
+      default: none
+      selector: {entity: {domain: light}}
+    light_3:
+      name: Light for Button 3
+      default: none
+      selector: {entity: {domain: light}}
+
+    button_1_up_action:
+      name: Button 1 Up Press Action
+      default: []
+      selector: {action: {}}
+    button_1_down_action:
+      name: Button 1 Down Press Action
+      default: []
+      selector: {action: {}}
+    button_2_up_action:
+      name: Button 2 Up Press Action
+      default: []
+      selector: {action: {}}
+    button_2_down_action:
+      name: Button 2 Down Press Action
+      default: []
+      selector: {action: {}}
+    button_3_up_action:
+      name: Button 3 Up Press Action
+      default: []
+      selector: {action: {}}
+    button_3_down_action:
+      name: Button 3 Down Press Action
+      default: []
+      selector: {action: {}}
+
+    dim_step:
+      name: Brightness step size (0–255)
+      default: 20
+      selector: {number: {min: 5, max: 50, step: 5, unit_of_measurement: "steps"}}
+
+    dim_interval:
+      name: Interval mellom pulser (sek)
+      description: Litt tregere verdier (0.3–0.5s) fungerer best på 2.9.2_r76 pga rate-limiting.
+      default: 0.4
+      selector: {number: {min: 0.2, max: 1.0, step: 0.1, unit_of_measurement: "s"}}
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: mqtt
+    topic: zigbee2mqtt/+/action
+
+variables:
+  payload: "{{ trigger.payload }}"
+  topic_device: "{{ trigger.topic.split('/')[1] }}"
+  action_topic: "{{ trigger.topic }}"  # eksakt topic for denne bryteren (for release-wait)
+  light_1: !input light_1
+  light_2: !input light_2
+  light_3: !input light_3
+  dim_step: !input dim_step
+  dim_interval: !input dim_interval
+
+# Helper for ett «pulse»-steg opp/ned på en gitt entitet
+# (HA støtter templating direkte i data)
+action:
+  - choose:
+
+      # ========== BUTTON 1 ==========
+      - conditions: "{{ payload == 'button_1_up_press' }}"
+        sequence: !input button_1_up_action
+      - conditions: "{{ payload == 'button_1_down_press' }}"
+        sequence: !input button_1_down_action
+
+      # Hold UP: øk brightness i pulser helt til vi mottar release på samme MQTT-topic
+      - conditions: "{{ payload == 'button_1_up_hold' and light_1 != none }}"
+        sequence:
+          - repeat:
+              sequence:
+                - variables:
+                    cur: "{{ state_attr(light_1, 'brightness') | int(0) }}"
+                    nxt: "{{ [cur + dim_step, 255] | min }}"
+                - service: light.turn_on
+                  data:
+                    entity_id: "{{ light_1 }}"
+                    brightness: "{{ nxt }}"
+                - wait_for_trigger:
+                    - platform: mqtt
+                      topic: zigbee2mqtt/+/action
+                      payload: button_1_up_release
+                  timeout: "{{ dim_interval }}"
+                  continue_on_timeout: true
+              until:
+                - condition: template
+                  value_template: >
+                    {{ wait.completed and wait.trigger.topic == action_topic }}
+
+      # Hold DOWN: senk brightness i pulser helt til release på samme MQTT-topic
+      - conditions: "{{ payload == 'button_1_down_hold' and light_1 != none }}"
+        sequence:
+          - repeat:
+              sequence:
+                - variables:
+                    cur: "{{ state_attr(light_1, 'brightness') | int(0) }}"
+                    nxt: "{{ [cur - dim_step, 0] | max }}"
+                - service: light.turn_on
+                  data:
+                    entity_id: "{{ light_1 }}"
+                    brightness: "{{ nxt }}"
+                - wait_for_trigger:
+                    - platform: mqtt
+                      topic: zigbee2mqtt/+/action
+                      payload: button_1_down_release
+                  timeout: "{{ dim_interval }}"
+                  continue_on_timeout: true
+              until:
+                - condition: template
+                  value_template: >
+                    {{ wait.completed and wait.trigger.topic == action_topic }}
+
+      # ========== BUTTON 2 ==========
+      - conditions: "{{ payload == 'button_2_up_press' }}"
+        sequence: !input button_2_up_action
+      - conditions: "{{ payload == 'button_2_down_press' }}"
+        sequence: !input button_2_down_action
+
+      - conditions: "{{ payload == 'button_2_up_hold' and light_2 != none }}"
+        sequence:
+          - repeat:
+              sequence:
+                - variables:
+                    cur: "{{ state_attr(light_2, 'brightness') | int(0) }}"
+                    nxt: "{{ [cur + dim_step, 255] | min }}"
+                - service: light.turn_on
+                  data:
+                    entity_id: "{{ light_2 }}"
+                    brightness: "{{ nxt }}"
+                - wait_for_trigger:
+                    - platform: mqtt
+                      topic: zigbee2mqtt/+/action
+                      payload: button_2_up_release
+                  timeout: "{{ dim_interval }}"
+                  continue_on_timeout: true
+              until:
+                - condition: template
+                  value_template: >
+                    {{ wait.completed and wait.trigger.topic == action_topic }}
+
+      - conditions: "{{ payload == 'button_2_down_hold' and light_2 != none }}"
+        sequence:
+          - repeat:
+              sequence:
+                - variables:
+                    cur: "{{ state_attr(light_2, 'brightness') | int(0) }}"
+                    nxt: "{{ [cur - dim_step, 0] | max }}"
+                - service: light.turn_on
+                  data:
+                    entity_id: "{{ light_2 }}"
+                    brightness: "{{ nxt }}"
+                - wait_for_trigger:
+                    - platform: mqtt
+                      topic: zigbee2mqtt/+/action
+                      payload: button_2_down_release
+                  timeout: "{{ dim_interval }}"
+                  continue_on_timeout: true
+              until:
+                - condition: template
+                  value_template: >
+                    {{ wait.completed and wait.trigger.topic == action_topic }}
+
+      # ========== BUTTON 3 ==========
+      - conditions: "{{ payload == 'button_3_up_press' }}"
+        sequence: !input button_3_up_action
+      - conditions: "{{ payload == 'button_3_down_press' }}"
+        sequence: !input button_3_down_action
+
+      - conditions: "{{ payload == 'button_3_up_hold' and light_3 != none }}"
+        sequence:
+          - repeat:
+              sequence:
+                - variables:
+                    cur: "{{ state_attr(light_3, 'brightness') | int(0) }}"
+                    nxt: "{{ [cur + dim_step, 255] | min }}"
+                - service: light.turn_on
+                  data:
+                    entity_id: "{{ light_3 }}"
+                    brightness: "{{ nxt }}"
+                - wait_for_trigger:
+                    - platform: mqtt
+                      topic: zigbee2mqtt/+/action
+                      payload: button_3_up_release
+                  timeout: "{{ dim_interval }}"
+                  continue_on_timeout: true
+              until:
+                - condition: template
+                  value_template: >
+                    {{ wait.completed and wait.trigger.topic == action_topic }}
+
+      - conditions: "{{ payload == 'button_3_down_hold' and light_3 != none }}"
+        sequence:
+          - repeat:
+              sequence:
+                - variables:
+                    cur: "{{ state_attr(light_3, 'brightness') | int(0) }}"
+                    nxt: "{{ [cur - dim_step, 0] | max }}"
+                - service: light.turn_on
+                  data:
+                    entity_id: "{{ light_3 }}"
+                    brightness: "{{ nxt }}"
+                - wait_for_trigger:
+                    - platform: mqtt
+                      topic: zigbee2mqtt/+/action
+                      payload: button_3_down_release
+                  timeout: "{{ dim_interval }}"
+                  continue_on_timeout: true
+              until:
+                - condition: template
+                  value_template: >
+                    {{ wait.completed and wait.trigger.topic == action_topic }}
