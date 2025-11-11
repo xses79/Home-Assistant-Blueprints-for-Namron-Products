@@ -3,7 +3,9 @@ blueprint:
   description: >
     • Up/Down Press = choose your action
     • Up/Down Hold = step dim opp/ned (absolutt brightness)
-    By Cato
+    • Select up to 3 ligths to Dim
+    • All 6 buttons configurable to do anything
+    • Made for Namron Simplify 4512794 / 4512793
   domain: automation
 
   input:
